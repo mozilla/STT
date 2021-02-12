@@ -247,7 +247,7 @@ do_deepspeech_netframework_build()
   MSBUILD="$(cygpath 'C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe')"
 
   # We need MSYS2_ARG_CONV_EXCL='/' otherwise the '/' of CLI parameters gets mangled and disappears
-  # We build the .NET Client for .NET Framework v4.5,v4.6,v4.7
+  # We build the .NET Client for .NET Framework v4.5,v4.6,v4.7, netstandard2.1, netcoreapp3.1
 
   MSYS2_ARG_CONV_EXCL='/' "${MSBUILD}" \
     DeepSpeechClient/DeepSpeechClient.csproj \
@@ -277,11 +277,14 @@ do_deepspeech_netframework_build()
     /p:TargetFramework="uap10.0" \
     /p:OutputPath=bin/nuget/x64/uap10.0
 
+
   MSYS2_ARG_CONV_EXCL='/' "${MSBUILD}" \
     DeepSpeechConsole/DeepSpeechConsole.csproj \
     /p:Configuration=Release \
     /p:Platform=x64
+
 }
+
 
 do_deepspeech_netframework_wpf_build()
 {
@@ -302,6 +305,61 @@ do_deepspeech_netframework_wpf_build()
 
 }
 
+
+do_deepspeech_netstandard_build()
+{
+    cd ${DS_DSDIR}/native_client/dotnet
+
+    # Setup dependencies
+    nuget restore DeepSpeech.sln
+
+    MSBUILD="$(cygpath 'C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe')"	
+
+    # We need MSYS2_ARG_CONV_EXCL='/' otherwise the '/' of CLI parameters gets mangled and disappears
+    # We build the .NET Client for netstandard2.1 and netstandard2.0
+    
+    MSYS2_ARG_CONV_EXCL='/' "${MSBUILD}" \
+      DeepSpeechClient/DeepSpeechClient.csproj \
+      /p:Configuration=Release \
+      /p:TargetFramework="netstandard2.1" \
+      /p:Platform="Any CPU" \
+      /p:OutputPath=bin/nuget/AnyCPU/netstandard2.1
+      
+    MSYS2_ARG_CONV_EXCL='/' "${MSBUILD}" \
+      DeepSpeechClient/DeepSpeechClient.csproj \
+      /p:Configuration=Release \
+      /p:TargetFramework="netstandard2.0" \
+      /p:Platform="Any CPU" \
+      /p:OutputPath=bin/nuget/AnyCPU/netstandard2.0
+}
+
+
+do_deepspeech_netcore_build()
+{
+    cd ${DS_DSDIR}/native_client/dotnet
+    
+    # Setup dependencies
+    nuget restore DeepSpeech.sln
+
+    MSBUILD="$(cygpath 'C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe')"	
+    
+    # We need MSYS2_ARG_CONV_EXCL='/' otherwise the '/' of CLI parameters gets mangled and disappears
+    # We build the .NET Client for NetCore 3.1
+
+    MSYS2_ARG_CONV_EXCL='/' "${MSBUILD}" \
+      DeepSpeechClient/DeepSpeechClient.csproj \
+      /p:Configuration=Release \
+      /p:TargetFramework="netcoreapp3.1" \
+      /p:Platform="Any CPU" \
+      /p:OutputPath=bin/nuget/AnyCPU/netcoreapp3.1
+
+    MSYS2_ARG_CONV_EXCL='/' "${MSBUILD}" \
+      DeepSpeechConsoleNetCore/DeepSpeechConsoleNetCore.csproj \
+      /p:Configuration=Release \
+  
+}
+
+
 do_nuget_build()
 {
   PROJECT_NAME=$1
@@ -312,7 +370,13 @@ do_nuget_build()
 
   cd ${DS_DSDIR}/native_client/dotnet
 
-  cp ${DS_TFDIR}/bazel-bin/native_client/libdeepspeech.so nupkg/build
+  # We copy the generated SO files into the Nuget runtime dirs
+
+  mkdir -p nupkg/runtimes/win-x64/native/  
+  cp ${DS_TFDIR}/bazel-bin/native_client/libdeepspeech.so nupkg/runtimes/win-x64/native/    
+  
+  mkdir -p nupkg/runtimes/win-arm64/native/
+  cp ${DS_TFDIR}/bazel-bin/native_client/libdeepspeech.so nupkg/runtimes/win-arm64/native/
 
   # We copy the generated clients for .NET into the Nuget framework dirs
 
@@ -327,6 +391,15 @@ do_nuget_build()
 
   mkdir -p nupkg/lib/uap10.0/
   cp DeepSpeechClient/bin/nuget/x64/uap10.0/DeepSpeechClient.dll nupkg/lib/uap10.0/
+  
+  mkdir -p nupkg/lib/netcoreapp3.1/
+  cp DeepSpeechClient/bin/nuget/AnyCPU/netcoreapp3.1/DeepSpeechClient.dll nupkg/lib/netcoreapp3.1/
+
+  mkdir -p nupkg/lib/netstandard2.1/
+  cp DeepSpeechClient/bin/nuget/AnyCPU/netstandard2.1/DeepSpeechClient.dll nupkg/lib/netstandard2.1/
+  
+  mkdir -p nupkg/lib/netstandard2.0/
+  cp DeepSpeechClient/bin/nuget/AnyCPU/netstandard2.0/DeepSpeechClient.dll nupkg/lib/netstandard2.0/
 
   PROJECT_VERSION=$(strip "${DS_VERSION}")
   sed \
@@ -335,6 +408,77 @@ do_nuget_build()
     nupkg/deepspeech.nuspec.in > nupkg/deepspeech.nuspec && cat nupkg/deepspeech.nuspec
 
   nuget pack nupkg/deepspeech.nuspec
+}
+
+do_nuget_repackage()
+{
+  PROJECT_NAME=$1
+  
+  if [ -z "${PROJECT_NAME}" ]; then
+    exit "Please call with a valid PROJECT_NAME"
+    exit 1
+  fi;
+
+  
+  # Forming nuget name
+  nuget="${PROJECT_NAME}.${DS_VERSION}.nupkg"
+
+  # Getting Nuget artifact URL
+  nuget_pkg_url=$(get_dep_nuget_pkg_url "${nuget}")
+    
+  cd ${DS_DSDIR}/native_client/dotnet
+  ${WGET} -O - "${nuget_pkg_url}" 
+  
+  cd ${DS_DSDIR}/native_client/dotnet/nupkg
+  gunzip > "${DS_DSDIR}/native_client/dotnet/${nuget}"
+  
+  
+  local all_deps=get_all_deps_from_task
+  
+  for dep in ${all_deps}; do
+    local has_artifact=$(curl -s https://community-tc.services.mozilla.com/api/queue/v1/task/${dep}/artifacts | python -c 'import json; import sys; has_artifact = True in [ e["name"].find("'libdeepspeech.zip'") > 0 for e in json.loads(sys.stdin.read())["artifacts"] ]; print(has_artifact)')
+
+    cd ${DS_DSDIR}/native_client/dotnet
+    ${WGET} -O - "https://community-tc.services.mozilla.com/api/queue/v1/task/${dep}/artifacts/public/libdeepspeech.zip"
+
+    if [ "${has_artifact}" = "True" ]; then
+      local extraAssetName="$(curl -s https://community-tc.services.mozilla.com/api/queue/v1/task/${dep} | python -c 'import json; import sys; print(" ".join(json.loads(sys.stdin.read())["extra"]["nc_asset_name"]));')"
+      do_nuget_generic_repackage "${extraAssetName}"
+    fi;
+  done;
+
+  cd ${DS_DSDIR}/native_client/dotnet
+
+  PROJECT_VERSION=$(strip "${DS_VERSION}")
+  sed \
+    -e "s/\$NUPKG_ID/${PROJECT_NAME}/" \
+    -e "s/\$NUPKG_VERSION/${PROJECT_VERSION}/" \
+    nupkg/deepspeech.nuspec.in > nupkg/deepspeech.nuspec && cat nupkg/deepspeech.nuspec
+
+  nuget pack nupkg/deepspeech.nuspec
+}
+
+do_nuget_generic_repackage()
+{
+  assetName=$1
+  
+  if [ "${assetName}" = "native_client.amd64.cpu.osx.tar.xz" ]; then
+    mkdir -p nupkg/runtimes/osx-x64/native/
+    cd ${DS_DSDIR}/native_client/dotnet/nupkg/runtimes/osx-x64/native
+    gunzip > "${DS_DSDIR}/native_client/dotnet/libdeepspeech.zip"
+  elif [ "${assetName}" = "native_client.amd64.cpu.linux.tar.xz" ]; then
+    mkdir -p nupkg/runtimes/linux-x64/native/
+    cd ${DS_DSDIR}/native_client/dotnet/nupkg/runtimes/linux-x64/native
+    gunzip > "${DS_DSDIR}/native_client/dotnet/libdeepspeech.zip"
+  elif [ "${assetName}" = "native_client.rpi3.cpu.linux.tar.xz" ]; then
+    mkdir -p nupkg/runtimes/linux-arm/native/
+    cd ${DS_DSDIR}/native_client/dotnet/nupkg/runtimes/linux-arm/native
+    gunzip > "${DS_DSDIR}/native_client/dotnet/libdeepspeech.zip"
+  elif [ "${assetName}" = "native_client.arm64.cpu.linux.tar.xz" ]; then
+    mkdir -p nupkg/runtimes/linux-arm64/native/
+    cd ${DS_DSDIR}/native_client/dotnet/nupkg/runtimes/linux-arm64/native
+    gunzip > "${DS_DSDIR}/native_client/dotnet/libdeepspeech.zip"
+  fi;
 }
 
 do_deepspeech_ios_framework_build()

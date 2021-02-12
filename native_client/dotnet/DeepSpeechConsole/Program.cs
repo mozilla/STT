@@ -80,7 +80,7 @@ namespace CSharpExamples
                         }
                     }
 
-                    string audioFile = audio ?? "arctic_a0024.wav";
+                    string audioFile = audio ?? "new-home-in-the-stars-16k.wav";
                     var waveBuffer = new WaveBuffer(File.ReadAllBytes(audioFile));
                     using (var waveInfo = new WaveFileReader(audioFile))
                     {
